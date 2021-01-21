@@ -1,101 +1,148 @@
-import sys
-import tilemap
+import random
 from ursina import *
 from ursina.prefabs.platformer_controller_2d import PlatformerController2d
 
-
 app = Ursina()
 
-window.title = 'My Game'
-window.borderless = False
+# ОКНО
+
+# размер полного экрана = разрешение монитора
+window.fullscreen_size = Vec2(window.screen_resolution[0], window.screen_resolution[1])
+
+# включаем полный экран
 window.fullscreen = True
-window.exit_button.visible = False
-window.fps_counter.enabled = True
 
-camera.orthographic = True
-camera.fov = 10
+# цвет фона окна
+# TODO: выделить цвета в переменные или в словарь
+window.color = color.color(240, 0.5, 0.7)
 
+# ФУНКЦИИ РИСОВАНИЯ
+# Мир состоит из вертикальных колонн
+# Колонны состоят квадратных блоков (в несколтько слоев)
+# 1-й слой (нижний) – камни – случайное число
+# 2-й слой – земля – 3 блока
+# 3-й слой – трава – 1 блок 
 
-# diag = Button(text='placeholder', scale=.1, origin_y=-3)
+def draw_world(columns_amount, start_x, start_y):
+    """
+        Рисует горизонтальный ряд из колонн
+        Первая колонна рисуется из start_x, start_y высотой first_column_height
 
+        columns_amount – количество колонн
+        start_x – x нижнего блока первой колонны
+        start_y – y нижнего блока первой колонны
+        first_column_height – высота первой колонны
+    """
 
-class Player(PlatformerController2d):
-    def __init__(self):
-        super().__init__(
-            position=Vec3(3, 20, 0),
-            color=color.orange,
+    # first_column_height задается один раз за весь мир
+    # от нее зависит высота следующих колонн
+    first_column_height = random.randint(5, 8)
+    for i in range(columns_amount):
+        draw_column(first_column_height, start_x, start_y)
+        # ограничим минимальную высоту колонны одним блоком
+        if first_column_height < 2:
+            first_column_height += random.randint(0, 1)
+        else:
+            first_column_height += random.randint(-1, 1)
+        # смещаемся вправо перед рисованием следующей колонны
+        start_x += 1
+
+def draw_column(first_column_height, start_x, start_y):
+    """
+        Рисует колонну из блоков.
+
+        first_column_height – высота первой колонны
+        start_x – x первого (нижнего) блока в колонне
+        start_y – y первого (нижнего) блока в колонне
+
+        TODO: выделить рисование блока в функцию
+        TODO: сделать счетчик блоков
+        TODO: посчитать время рисования мира
+    """
+
+    # 1-й слой колонны – камни
+    for i in range(first_column_height):
+        block = Entity(
+            model="quad",
+            collider="box",
+            color=color.color(0, 0, .5),
+            scale=(1, 1),
+            x=start_x,
+            y=start_y,
         )
+        # смещаемся выше для рисования следующего блока
+        start_y += 1
 
-
-class Tile(Entity):
-    def __init__(self, x_shift, y_shift, block_color):
-        super().__init__(
-            model='cube',
-            position=Vec3(x_shift, y_shift, 0),
-            scale=(1, 1, 1),
-            collider='box',
+    # 2-й слой колонны – 3 блока земли
+    for i in range(3):
+        block = Entity(
+            model="quad",
+            collider="box",
+            color=color.color(50, .38, .72),
+            scale=(1, 1),
+            x=start_x,
+            y=start_y,
         )
+        start_y += 1
 
-        if block_color == "g":
-            self.color = color.rgba(124, 141, 76, a=255)
-        elif block_color == "s":
-            self.color = color.rgba(114, 84, 40, a=255)
-        elif block_color == "r":
-            self.color = color.rgba(150, 159, 178, a=255)
-        elif block_color == "w":
-            self.color = color.rgba(182, 227, 219, a=150)
-            self.collider = None
+    # 3-й слой колонны – 1 блок травы
+    block = Entity(
+        model="quad",
+        collider="box",
+        color=color.color(120, .5, .7),
+        scale=(1, 1),
+        x=start_x,
+        y=start_y,
+    )
 
 
-player = Player()
-camera.add_script(SmoothFollow(target=player, offset=[0, 1, -30], speed=20))
+# рисуем мир в 50 колонн из x 0, y 0
+draw_world(50, 0, 0)
 
-controls = """
-            A, D – двигаться
-            Q, E – приблизиться 
-            SPACE – прыгнуть
-            ENTER – вернуться
-            ESC – выйти
-        """
-
-text1 = Text(
-    text = controls,
-    parent = scene,
-    scale = 20,
-    x = 0,
-    y = 5,
-    z = 0,
+# создаем игрока в x 0 и y 15
+# TODO: определить точку появления игрока по последнему (верхнему) блоку в первой колонне
+player = PlatformerController2d(
+    collision=True,
+    position=(0, 15),
 )
 
-# TILES
-# TODO turn matrix 90 ccw
-tiles = []
-row_counter = 0
-for i in tilemap.data:
-    element_counter = 0
-    for j in str(i):
-        if j != " ":
-            tile = Tile(element_counter, row_counter, j)
-            tiles.append(tile)
-        element_counter += 1
+# КАМЕРА
 
-    row_counter -= 1
+# поле зрения (field of view) камеры
+# больше значение – больше объектов видно одновременно
+camera.fov = 20
 
+# отключаем перспективу
+# model = "cube" будет плоским
+camera.orthographic = True
 
-# CONTROLS
+# сразу переходим на игрока чтобы не ждать, пока камера до него доедет
+camera.position = player.position
+
+# камера преследует игрока
+# смещение камеры относительно игрока [по x 0, по y 5, по z -2]
+# смещение по z < - 1, иначе игрока не видно
+# скорость камеры 8
+camera.add_script(SmoothFollow(target=player, offset=[0, 5, -2], speed=8))
+
+# ФУНКЦИИ УРСИНЫ, ВЫЗЫВАЮТСЯ САМИ
+
+# вызывается постоянно, можно зажимать клавиши
+# если нажата клавиша, возвращается 1, если нет – 0
+# time.dt – время с последнего кадра
 def update():
-    if held_keys['escape']:
+    camera.fov += held_keys["2"] * time.dt * 10
+    camera.fov -= held_keys["8"] * time.dt * 10
+
+# вызывается по нажатию клавиши, нельзя зажимать
+def input(key):
+    # выход
+    if key == "escape":
         sys.exit()
 
-    if held_keys['enter']:
-        player.position = Vec3(3, 20, 0)
+    # вернуть игрока на начало
+    if key == "enter":
+        player.position = (0, 20)
 
-    if held_keys['q']:
-        camera.fov += 1
-
-    if held_keys['e']:
-        camera.fov -= 1
-
-
-if __name__ == '__main__':
-    app.run()
+# запускаем игру
+app.run()
